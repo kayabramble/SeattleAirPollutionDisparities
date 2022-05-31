@@ -1,0 +1,611 @@
+---
+title: "Manuscript Code"
+author: "Kaya Bramble"
+date: "5/31/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Clear workspace of all objects and unload all extra (non-base) packages
+rm(list = ls(all = TRUE))
+if (!is.null(sessionInfo()$otherPkgs)) {
+    res <- suppressWarnings(
+        lapply(paste('package:', names(sessionInfo()$otherPkgs), sep=""),
+               detach, character.only=TRUE, unload=TRUE, force=TRUE))
+   
+}
+
+pacman::p_load(dplyr, ggplot2, ggpubr, sf, tidyverse, modelr, nlme, gstat, sp, geepack, kableExtra)
+
+```
+
+## Preparing Data
+
+```{r}
+
+## Air pollution predictions at block centroids
+block_preds <- readRDS("/projects/trap/transfer/kaya/Code Review/Block Predictions/20220207/predictions.rda")
+
+## 2010 census data at block level
+census_block <- read.csv("/projects/trap/transfer/kaya/Code Review/dr0342_census_block.csv")
+
+## 2010 census data at block group level
+census_blockgroup <- read.csv("/projects/trap/transfer/kaya/Code Review/dr0342_census_blockgroup.csv")
+
+## Corresponding HOLC grades to blocks
+holc_grades <- read.csv("/projects/trap/transfer/kaya/Code Review/holc_grades.csv")
+
+## Blocks wihin redlining area
+redlining_area <- read.csv("/projects/trap/transfer/kaya/Code Review/redlining_area.csv")
+
+## Convert native id column to block column
+block_preds$block_key <- substr(block_preds$native_id, 1, 15)
+
+## Remove blocks not in monitoring area
+block_preds <- subset(block_preds, in_monitoring_area == TRUE)
+
+## Select data used
+block_preds <- subset(block_preds, variable == "ma200_ir_bc1" | variable == "pm2.5_ug_m3" | variable == "no2" | variable == "pnc_noscreen")
+block_preds <- block_preds[c("block_key", "blockgroup_key", "variable", "prediction", "longitude", "latitude")]
+
+census_block <- census_block[c("block_key", "bk_tot_pop_2010", "bk_p_race_black", "bk_p_race_asian", "bk_p_race_native", "bk_p_race_pacific", "bk_p_ethn_non_hisp_white", "bk_p_ethn_hisp", "households")]
+
+census_blockgroup <- census_blockgroup[c("blockgroup_key", "bg_med_inc_hshld")]
+
+## Merge census data with predictions
+census_block$block_key <- as.character(census_block$block_key)
+census_preds <- block_preds %>%
+  left_join(census_block, by="block_key") %>%
+  left_join(census_blockgroup, by="blockgroup_key") %>%
+  ## Exclude blocks with 0 population, 0 households, or with 0 income data
+  filter(bk_tot_pop_2010 != 0) %>%
+  filter(households != 0) %>%
+  filter(!is.na(bg_med_inc_hshld))
+
+## Define income groups
+census_preds$income_group <- cut(census_preds$bg_med_inc_hshld, c(0, 20000, 40000, 50000, 60000, 70000, 80000, 90000, 110000, 250001))
+levels(census_preds$income_group) <- c("<$20k", "$20k-40k", "$40k-50k", "$50k-60k", "$60k-70k", "$70k-80k", "$80k-90k", "$90k-110k", ">$110k")
+
+## Create wide dataframe
+census_preds_wide <- census_preds %>%
+  pivot_wider(names_from=variable, values_from=prediction)
+
+## Save file
+write.csv(census_preds,"/projects/trap/transfer/kaya/census_preds.csv", row.names = FALSE)
+
+## Assign A-D HOLC grades
+holc_grades <- distinct(holc_grades)
+holc_grades$BLOCKID10 <- as.character(holc_grades$BLOCKID10)
+redlining_blocks <- census_preds_wide %>%
+  left_join(holc_grades, by=c("block_key"="BLOCKID10"))
+redlining_blocks$count <- as.numeric(ave(redlining_blocks$block_key, redlining_blocks$block_key, FUN = length))
+
+## Assign X HOLC grade
+redlining_blocks$holc_grade[is.na(redlining_blocks$holc_grade) & redlining_blocks$block_key %in% redlining_area$BLOCKID10] <- "X"
+redlining_blocks <- na.omit(redlining_blocks)
+
+## Save file
+write.csv(redlining_blocks,"/projects/trap/transfer/kaya/redlining_blocks.csv", row.names = FALSE)
+
+## Percent Different Function
+per_diff <- function(x1, x2) {
+  diff <- (x1 - x2)/((x1 + x2)/2) * 100
+  diff <- round(diff, digits=0)
+  return(diff)
+}
+
+```
+
+## Percentage of without households/household income data
+
+```{r}
+
+census_percent <- block_preds %>%
+  left_join(census_block, by="block_key") %>%
+  left_join(census_blockgroup, by="blockgroup_key") %>%
+  filter(bk_tot_pop_2010 != 0)
+
+census_percent_wide <- census_percent %>%
+  pivot_wider(names_from=variable, values_from=prediction)
+
+nrow(subset(census_percent_wide, households == 0))
+
+nrow(subset(census_percent_wide, households == 0)) / nrow(census_percent_wide) * 100
+
+sum(subset(census_percent_wide, households == 0)$bk_tot_pop_2010) / sum(census_percent_wide$bk_tot_pop_2010) * 100
+
+nrow(subset(census_percent_wide, is.na(bg_med_inc_hshld) & households!= 0))
+
+nrow(subset(census_percent_wide, is.na(bg_med_inc_hshld) & households!= 0)) / nrow(census_percent_wide) * 100
+
+sum(subset(census_percent_wide, is.na(bg_med_inc_hshld) & households!= 0)$bk_tot_pop_2010) / sum(census_percent_wide$bk_tot_pop_2010) * 100
+
+```
+
+
+## Table 1. Summary Statistics
+
+```{r}
+
+outside_redlining <- subset(census_preds_wide, !(census_preds_wide$block_key %in% redlining_blocks$block_key))
+
+## n Blocks
+nrow(census_preds_wide)
+length(unique(redlining_blocks$block_key))
+nrow(census_preds_wide) - length(unique(redlining_blocks$block_key))
+redlining_blocks %>%
+  group_by(holc_grade) %>%
+  summarise(pop = sum(1/count))
+
+## n People
+sum(census_preds_wide$bk_tot_pop_2010)
+sum(redlining_blocks$bk_tot_pop_2010/redlining_blocks$count)
+sum(census_preds_wide$bk_tot_pop_2010) - sum(redlining_blocks$bk_tot_pop_2010/redlining_blocks$count)
+redlining_blocks %>%
+  group_by(holc_grade) %>%
+  summarise(pop = sum(bk_tot_pop_2010/count))
+
+## Pollutants and demographics
+summary(census_preds_wide)
+summary(data.frame(unique(redlining_blocks)))
+summary(outside_redlining)
+summary(subset(redlining_blocks, holc_grade == "A"))
+summary(subset(redlining_blocks, holc_grade == "B"))
+summary(subset(redlining_blocks, holc_grade == "C"))
+summary(subset(redlining_blocks, holc_grade == "D"))
+summary(subset(redlining_blocks, holc_grade == "X"))
+
+```
+
+## Exposure Disparities by Income
+
+```{r, fig.show="hold", out.width="50%", echo=FALSE}
+
+f <- function(x) {
+  r <- quantile(x, probs = c(0.05, 0.25, 0.5, 0.75, 0.95))
+  names(r) <- c("ymin", "lower", "middle", "upper", "ymax")
+  r
+}
+
+ggplot(census_preds_wide, aes(x=income_group, y=pnc_noscreen)) + stat_summary(fun.data = f, geom="boxplot", fill = "#F8766D") + labs(x= "Income Level", y = "UFP Concentration (pt/cm3)") + theme(legend.position='none', text = element_text(size = 20), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + expand_limits(y=0)
+
+ggplot(census_preds_wide, aes(x=income_group, y=ma200_ir_bc1)) + stat_summary(fun.data = f, geom="boxplot", fill = "#7CAE00") + labs(x= "Income Level", y = "BC Concentration (µg/m3)") + theme(legend.position='none', text = element_text(size = 20), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + expand_limits(y=0)
+
+ggplot(census_preds_wide, aes(x=income_group, y=no2)) + stat_summary(fun.data = f, geom="boxplot", fill = "#00BFC4") + labs(x= "Income Level", y = "NO2 Concentration (ppb)") + theme(legend.position='none', text = element_text(size = 20), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + expand_limits(y=0)
+
+ggplot(census_preds_wide, aes(x=income_group, y=pm2.5_ug_m3)) + stat_summary(fun.data = f, geom="boxplot", fill = "#C77CFF") + labs(x= "Income Level", y = "PM2.5 Concentration (µg/m3)") + theme(legend.position='none', text = element_text(size = 20), axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + expand_limits(y=0)
+
+```
+
+## Exposure Disparities by Race-Ethnicity
+
+```{r}
+
+## Table 2
+
+census_preds_long <- census_preds_wide %>%
+  pivot_longer(cols = c(bk_p_race_asian, bk_p_race_black, bk_p_ethn_hisp, bk_p_ethn_non_hisp_white, bk_p_race_native, bk_p_race_pacific), names_to="race", values_to="percent")
+
+weighted.mean(census_preds_wide$pnc_noscreen, census_preds_wide$bk_tot_pop_2010)
+weighted.mean(census_preds_wide$ma200_ir_bc1, census_preds_wide$bk_tot_pop_2010)
+weighted.mean(census_preds_wide$no2, census_preds_wide$bk_tot_pop_2010)
+weighted.mean(census_preds_wide$pm2.5_ug_m3, census_preds_wide$bk_tot_pop_2010)
+
+census_preds_long %>%
+  group_by(race) %>%
+  summarise(pop = sum(percent * bk_tot_pop_2010 / 100),
+            ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010 * percent),
+            ufp_pct_diff = per_diff(ufp, 6719),
+            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010 * percent),
+            bc_pct_diff = per_diff(bc, 522),
+            no2 = weighted.mean(no2, bk_tot_pop_2010 * percent),
+            no2_pct_diff = per_diff(no2, 8.77),
+            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010 * percent),
+            pm2.5_pct_diff = per_diff(pm2.5, 4.56))
+
+```
+
+## Exposure Disparities by Redlining Grade
+
+```{r}
+
+## Table 3
+
+## Pollution means weighted by block population divided by number of grades block is assigned to
+redlining_blocks %>%
+  group_by(holc_grade) %>%
+  summarise(ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010/count),
+            ufp_pct_diff = per_diff(ufp, 7102),
+            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010/count),
+            bc_pct_diff = per_diff(bc, 539),
+            no2 = weighted.mean(no2, bk_tot_pop_2010/count),
+            no2_pct_diff = per_diff(no2, 9.3),
+            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010/count),
+            pm2.5_pct_diff = per_diff(pm2.5, 4.7))
+
+```
+
+## GEE Models
+
+```{r}
+
+# Created nested dfs by pollutant
+by_pollutant <- census_preds %>% 
+  group_by(variable) %>% 
+  nest()
+
+# Create model function
+pollutant_model <- function(df) {
+  lm(prediction ~ log10(bg_med_inc_hshld), weights = bk_tot_pop_2010, data=df)
+}
+
+## Apply function to each group (pollutant)
+by_pollutant <- by_pollutant %>% 
+  mutate(model = map(data, pollutant_model),
+         resids = map2(data, model, add_residuals)) 
+
+
+## Unnest with broom::glance  
+by_pollutant %>% 
+  mutate(glance=map(model, broom::glance)) %>% 
+  unnest(glance)
+
+by_pollutant %>% 
+  mutate(tidy = map(model, broom::tidy)) %>%
+  unnest(tidy) %>% 
+  dplyr::select(term, estimate, std.error) %>% 
+  mutate(estimate = estimate*log10(1.1))
+
+# Create dummy grouping variable  
+census_preds$group = 1 
+
+census_preds_pnc = census_preds %>% 
+   filter(variable == "pnc_noscreen") 
+
+model_nosp_pnc <- lme(fixed = prediction ~ log10(bg_med_inc_hshld), 
+                  data = census_preds_pnc, random = ~ 1|group, method = "ML",
+                  weights = ~bk_tot_pop_2010)
+
+summary(model_nosp_pnc)
+
+
+
+census_preds_dist = census_preds %>% 
+  select(block_key, bk_tot_pop_2010, bg_med_inc_hshld, longitude, latitude) %>% 
+  distinct()
+
+
+df_resids_locs = census_preds_pnc %>% 
+  select(block_key) %>% 
+  mutate(block_key = as.character(block_key)) %>% 
+  left_join(census_preds_dist, by=c("block_key" = "block_key")) 
+
+
+resids = model_nosp_pnc$residuals[,1]
+
+df_resids_locs$resids_pnc = resids
+
+coordinates(df_resids_locs) = ~longitude+latitude
+vario = variogram(resids_pnc~longitude+latitude, df_resids_locs)
+plot(vario)
+
+rm(df_resids_locs)
+sites <- sample(1:16386, 200)
+sampledata <- census_preds_pnc[sites, ]
+
+null_model <- lme(fixed = prediction ~ log10(bg_med_inc_hshld), 
+                  data = sampledata, random = ~ 1|group)
+summary(null_model)
+
+
+exp.sp <- update(null_model, correlation = corExp(1, form= ~ longitude+latitude))
+summary(exp.sp)
+
+mod_ind_full <- geeglm(formula = prediction ~ log10(bg_med_inc_hshld),
+                  data = census_preds_pnc, 
+                  weights = bk_tot_pop_2010,
+                  id=block_key, 
+                  corstr="independence")
+
+
+summary(mod_ind_full)
+
+tidy(mod_ind_full, conf.int = TRUE)
+
+
+
+# Created nested dfs by pollutant
+mhi_pollutant <- census_preds %>% 
+  group_by(variable) %>% 
+  nest()
+
+# Create model function
+mhi_model <- function(df) {
+  geeglm(formula = prediction ~ log10(bg_med_inc_hshld),
+                  data = df, 
+                  weights = bk_tot_pop_2010,
+                  id=block_key, 
+                  corstr="independence")
+}
+
+## Apply function to each group (pollutant)
+mhi_pollutant <- mhi_pollutant %>% 
+  mutate(model = map(data, mhi_model),
+         resids = map2(data, model, add_residuals)) 
+
+
+inc_plots <- mhi_pollutant %>% 
+  mutate(tidy = map(model, broom::tidy)) %>%
+  unnest(tidy) %>% 
+  dplyr::select(term, estimate, std.error) %>% 
+  filter(term=="log10(bg_med_inc_hshld)") %>% 
+  select(-term) %>% 
+  mutate(conf.lo = estimate - 1.96*std.error, 
+         conf.hi = estimate + 1.96*std.error) %>% 
+  mutate(estimate = estimate*log10(1.1),
+         std.error = std.error*log10(1.1),
+         conf.lo = conf.lo*log10(1.1),
+         conf.hi = conf.hi*log10(1.1))
+
+mhi_pollutant %>% 
+  mutate(tidy = map(model, broom::tidy)) %>%
+  unnest(tidy) %>% 
+  dplyr::select(term, estimate, std.error) %>% 
+  filter(term=="log10(bg_med_inc_hshld)") %>% 
+  select(-term) %>% 
+  mutate(conf.lo = estimate - 1.96*std.error, 
+         conf.hi = estimate + 1.96*std.error) %>% 
+  mutate(estimate = estimate*log10(1.1),
+         std.error = std.error*log10(1.1),
+         conf.lo = conf.lo*log10(1.1),
+         conf.hi = conf.hi*log10(1.1)) %>% 
+  kable() %>% 
+  kable_styling()
+
+# Created nested dfs by pollutant
+race_pollutant <- census_preds %>% 
+  pivot_longer(cols=c("bk_p_ethn_non_hisp_white", "bk_p_race_asian", "bk_p_race_black", "bk_p_ethn_hisp",
+                      "bk_p_race_pacific", "bk_p_race_native"),
+               names_to = "race_eth_grp",
+               values_to = "bk_p_race") %>% 
+  group_by(variable, race_eth_grp) %>% 
+  nest()
+
+# Create model function
+perc_race_model <- function(df) {
+  geeglm(formula = prediction ~ bk_p_race,
+                  data = df, 
+                  weights = bk_tot_pop_2010,
+                  id=block_key, 
+                  corstr="independence")
+}
+
+## Apply function to each group (pollutant)
+perc_race <- race_pollutant %>% 
+  mutate(model = map(data, perc_race_model),
+         resids = map2(data, model, add_residuals)) 
+
+perc_race %>% 
+  mutate(tidy = map(model, broom::tidy)) %>%
+  unnest(tidy) %>% 
+  dplyr::select(term, estimate, std.error) %>% 
+  select(-term) %>% 
+  mutate(conf.lo = estimate - 1.96*std.error, 
+         conf.hi = estimate + 1.96*std.error) %>% 
+  kable() %>% 
+  kable_styling()
+
+fig_4 <- data.frame(perc_race %>% 
+  mutate(tidy = map(model, broom::tidy)) %>%
+  unnest(tidy) %>% 
+  dplyr::select(term, estimate, std.error) %>% 
+  filter(term =="bk_p_race") %>%
+  filter(race_eth_grp !="bk_p_race_pacific") %>%
+  filter(race_eth_grp !="bk_p_race_native") %>%
+  select(-term) %>% 
+  mutate(conf.lo = estimate - 1.96*std.error, 
+         conf.hi = estimate + 1.96*std.error))
+
+fig_4$variable <- recode(fig_4$variable, pnc_noscreen = "UFP (pt/cm3)", ma200_ir_bc1 = "BC (µg/m3)", no2 = "NO2 (ppb)", pm2.5_ug_m3 = "PM2.5 (µg/m3)", ) 
+fig_4$race_eth_grp <- recode(fig_4$race_eth_grp, bk_p_ethn_non_hisp_white = "Non-Hispanic White", bk_p_race_asian = "Asian", bk_p_race_black = "Black", bk_p_ethn_hisp = "Hispanic") 
+
+
+# Created nested dfs by pollutant
+holc_df <- redlining_blocks %>% 
+  pivot_longer(cols=c("ma200_ir_bc1", "no2", "pm2.5_ug_m3", "pnc_noscreen"),
+               names_to="variable",
+               values_to="prediction") %>% 
+  group_by(variable) %>% 
+  nest()
+
+holc_model <- function(df) {
+  geeglm(formula = prediction ~ holc_grade,
+                  data = df, 
+                  weights = bk_tot_pop_2010 / count,
+                  id=block_key, 
+                  corstr="independence")
+}
+
+## Apply function to each group (pollutant)
+holc_output <- holc_df %>% 
+  mutate(model = map(data, holc_model),
+         resids = map2(data, model, add_residuals)) 
+
+holc_output %>% 
+  mutate(tidy = map(model, broom::tidy)) %>%
+  unnest(tidy) %>% 
+  dplyr::select(term, estimate, std.error) %>% 
+  mutate(conf.lo = estimate - 1.96*std.error, 
+         conf.hi = estimate + 1.96*std.error) %>% 
+  kable() %>% 
+  kable_styling()
+
+# Centering by holc grade A gives us intercepts close to those from single predictor model for holc grade
+mlr_df <- redlining_blocks %>% 
+  mutate(adjusted_inc = bg_med_inc_hshld-117134,
+        adjusted_race = bk_p_ethn_non_hisp_white -85.82) %>%
+  pivot_longer(cols=c("ma200_ir_bc1", "no2", "pm2.5_ug_m3", "pnc_noscreen"),
+               names_to="variable",
+               values_to="prediction") %>% 
+  group_by(variable) %>% 
+  nest()
+
+mlr_model <- function(df) {
+  geeglm(formula = prediction ~ adjusted_inc + adjusted_race + holc_grade,
+                  data = df, 
+                  weights = bk_tot_pop_2010 / count,
+                  id=block_key, 
+                  corstr="independence")
+}
+
+## Apply function to each group (pollutant)
+mlr_output <- mlr_df %>% 
+  mutate(model = map(data, mlr_model),
+         resids = map2(data, model, add_residuals)) 
+
+mlr_output %>% 
+  mutate(tidy = map(model, broom::tidy)) %>%
+  unnest(tidy) %>% 
+  dplyr::select(term, estimate, std.error) %>% 
+  mutate(conf.lo = estimate - 1.96*std.error, 
+         conf.hi = estimate + 1.96*std.error) %>% 
+  mutate(estimate = ifelse(term == "adjusted_inc", estimate*10000, estimate),
+          std.error = ifelse(term == "adjusted_inc", std.error*10000, std.error),
+          conf.lo = ifelse(term == "adjusted_inc", conf.lo*10000, conf.lo),
+          conf.hi = ifelse(term == "adjusted_inc", conf.hi*10000, conf.hi)) %>%
+  mutate(estimate = ifelse(term == "adjusted_race", estimate*10, estimate),
+          std.error = ifelse(term == "adjusted_race", std.error*10, std.error),
+          conf.lo = ifelse(term == "adjusted_race", conf.lo*10, conf.lo),
+          conf.hi = ifelse(term == "adjusted_race", conf.hi*10, conf.hi)) %>%
+  kable() %>% 
+  kable_styling()
+
+fig_4$race_eth_grp <- factor(fig_4$race_eth_grp, levels = c("Non-Hispanic White", "Asian", "Hispanic", "Black"))
+
+ggplot(data=fig_4, aes(x=race_eth_grp, y=estimate *5, ymin=conf.lo *5, ymax=conf.hi *5)) +
+  geom_pointrange(aes(col=race_eth_grp)) + 
+  geom_hline(aes(col=race_eth_grp), yintercept=0, linetype=2) +
+  xlab("Pollutant") + ylab("Mean Difference (95% CI) per 5% Increase in Population") + 
+  geom_errorbar(aes(ymin=conf.lo*5, ymax=conf.hi*5, col=race_eth_grp), width=0.5 ,cex=1) + 
+  facet_wrap(~factor(variable, levels=c("UFP (pt/cm3)","BC (µg/m3)","NO2 (ppb)","PM2.5 (µg/m3)")), strip.position="left", nrow=4, scales = "free_x") +
+  theme(plot.title=element_text(size=16,face="bold"),
+      axis.text.y=element_blank(),
+      axis.ticks.y=element_blank(),
+      axis.text.x=element_text(face="bold"),
+      axis.title=element_text(size=12,face="bold"),
+      strip.text.y = element_text(hjust=0,vjust = 1,angle=180,face="bold")) +
+  labs(color="Race-Ethnicity") +
+  coord_flip()
+
+```
+
+```{r, fig.show="hold", out.width="50%"}
+
+ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=ma200_ir_bc1)) + geom_point() + geom_abline(slope=(-12.1)/log10(1.1), intercept=79.9/log10(1.1), color="red") + geom_smooth()
+
+ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=no2)) + geom_point() + geom_abline(slope=(-.224)/log10(1.1), intercept=1.442/log10(1.1), color="red") + geom_smooth()
+
+ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=pm2.5_ug_m3)) + geom_point() + geom_abline(slope=(-.0407)/log10(1.1), intercept=0.385/log10(1.1), color="red") + geom_smooth()
+
+ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=pnc_noscreen)) + geom_point() + geom_abline(slope=(-198.04)/log10(1.1), intercept=1232.50/log10(1.1), color="red") + geom_smooth()
+
+ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=pnc_noscreen)) + geom_point() + geom_smooth() + geom_abline(slope=11.494, intercept=6546.948, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_race_black, y=pnc_noscreen)) + geom_point() + geom_smooth() + geom_abline(slope=77.238, intercept=6229.281, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=pnc_noscreen)) + geom_point() + geom_smooth() + geom_abline(slope=34.451, intercept=6398.682, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=pnc_noscreen)) + geom_point() + geom_smooth() + geom_abline(slope=-30.901, intercept=8694.838, color="red")
+
+ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=ma200_ir_bc1)) + geom_point() + geom_smooth() + geom_abline(slope=-0.038, intercept=522.568, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_race_black, y=ma200_ir_bc1)) + geom_point() + geom_smooth() + geom_abline(slope=3.359, intercept=500.701, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=ma200_ir_bc1)) + geom_point() + geom_smooth() + geom_abline(slope=1.204, intercept=510.809, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=ma200_ir_bc1)) + geom_point() + geom_smooth() + geom_abline(slope=-1.053, intercept=589.312, color="red")
+
+ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=no2)) + geom_point() + geom_smooth() + geom_abline(slope=-0.002, intercept=8.803, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_race_black, y=no2)) + geom_point() + geom_smooth() + geom_abline(slope=0.048, intercept=8.466, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=no2)) + geom_point() + geom_smooth() + geom_abline(slope=0.007, intercept=8.705, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=no2)) + geom_point() + geom_smooth() + geom_abline(slope=-0.012, intercept=9.509, color="red")
+
+ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=pm2.5_ug_m3)) + geom_point() + geom_smooth() + geom_smooth() + geom_abline(slope=-0.004, intercept=4.616, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_race_black, y=pm2.5_ug_m3)) + geom_point() + geom_smooth() + geom_smooth() + geom_abline(slope=0.010, intercept=4.496, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=pm2.5_ug_m3)) + geom_point() + geom_smooth() + geom_smooth() + geom_abline(slope=0.001, intercept=4.551, color="red")
+ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=pm2.5_ug_m3)) + geom_point() + geom_smooth() + geom_smooth() + geom_abline(slope=-0.001, intercept=4.642, color="red")
+
+
+```
+
+
+# Supplement ##################################################################
+
+## Income Table
+
+```{r}
+
+## Table S1
+
+census_preds_wide %>%
+  group_by(income_group) %>%
+  summarise(pop = sum(bk_tot_pop_2010),
+            ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010),
+            ufp_pct_diff = per_diff(ufp, 5644),
+            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010),
+            bc_pct_diff = per_diff(bc, 448),
+            no2 = weighted.mean(no2, bk_tot_pop_2010),
+            no2_pct_diff = per_diff(no2, 7.6),
+            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010),
+            pm2.5_pct_diff = per_diff(pm2.5, 4.3))
+
+```
+
+## Sensitivity Analysis
+
+```{r, fig.show="hold", out.width="50%", echo=FALSE}
+
+ggplot(redlining_blocks, aes(x=income_group, y=pnc_noscreen)) + stat_summary(fun.data = f, geom="boxplot", fill = "#F8766D") + labs(x= "Income Level", y = "UFP Concentration (pt/cm3)") + theme(legend.position='none', text = element_text(size = 20), axis.text.x = element_text(angle = 45, hjust=1, vjust=1)) + expand_limits(y=0)
+
+ggplot(redlining_blocks, aes(x=income_group, y=ma200_ir_bc1)) + stat_summary(fun.data = f, geom="boxplot", fill = "#7CAE00") + labs(x= "Income Level", y = "BC Concentration (µg/m3)") + theme(legend.position='none', text = element_text(size = 20), axis.text.x = element_text(angle = 45, hjust=1, vjust=1)) + expand_limits(y=0)
+
+ggplot(redlining_blocks, aes(x=income_group, y=no2)) + stat_summary(fun.data = f, geom="boxplot", fill = "#00BFC4") + labs(x= "Income Level", y = "NO2 Concentration (ppb)") + theme(legend.position='none', text = element_text(size = 20), axis.text.x = element_text(angle = 45, hjust=1, vjust=1)) + expand_limits(y=0)
+
+ggplot(redlining_blocks, aes(x=income_group, y=pm2.5_ug_m3)) + stat_summary(fun.data = f, geom="boxplot", fill = "#C77CFF") + labs(x= "Income Level", y = "PM2.5 Concentration (µg/m3)") + theme(legend.position='none', text = element_text(size = 20), axis.text.x = element_text(angle = 45, hjust=1, vjust=1)) + expand_limits(y=0)
+
+```
+
+``` {r}
+
+redlining_blocks_unique <- subset(redlining_blocks, !duplicated(redlining_blocks$block_key))
+
+redlining_blocks_long <- redlining_blocks %>%
+  pivot_longer(cols = c(bk_p_race_asian, bk_p_race_black, bk_p_ethn_hisp, bk_p_ethn_non_hisp_white, bk_p_race_native, bk_p_race_pacific), names_to="race", values_to="percent")
+
+redlining_blocks_unique %>%
+  group_by(income_group) %>%
+  summarise(pop = sum(bk_tot_pop_2010),
+            ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010),
+            ufp_pct_diff = per_diff(ufp, 5644),
+            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010),
+            bc_pct_diff = per_diff(bc, 448),
+            no2 = weighted.mean(no2, bk_tot_pop_2010),
+            no2_pct_diff = per_diff(no2, 7.6),
+            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010),
+            pm2.5_pct_diff = per_diff(pm2.5, 4.3))
+
+weighted.mean(redlining_blocks_unique$pnc_noscreen, redlining_blocks_unique$bk_tot_pop_2010)
+weighted.mean(redlining_blocks_unique$ma200_ir_bc1, redlining_blocks_unique$bk_tot_pop_2010)
+weighted.mean(redlining_blocks_unique$no2, redlining_blocks_unique$bk_tot_pop_2010)
+weighted.mean(redlining_blocks_unique$pm2.5_ug_m3, redlining_blocks_unique$bk_tot_pop_2010)
+
+redlining_blocks_long %>%
+  group_by(race) %>%
+  summarise(pop = sum(percent * bk_tot_pop_2010 / 100),
+            ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010 * percent),
+            ufp_pct_diff = per_diff(ufp, 8309),
+            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010 * percent),
+            bc_pct_diff = per_diff(bc, 636.9),
+            no2 = weighted.mean(no2, bk_tot_pop_2010 * percent),
+            no2_pct_diff = per_diff(no2, 11.64),
+            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010 * percent),
+            pm2.5_pct_diff = per_diff(pm2.5, 5.038))
+
+```
+
