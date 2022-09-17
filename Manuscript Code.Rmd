@@ -301,8 +301,8 @@ resids = model_nosp_pnc$residuals[,1]
 df_resids_locs$resids_pnc = resids
 
 coordinates(df_resids_locs) = ~longitude+latitude
-# vario = variogram(resids_pnc~longitude+latitude, df_resids_locs)
-# plot(vario)
+vario = variogram(resids_pnc~longitude+latitude, df_resids_locs)
+plot(vario)
 
 rm(df_resids_locs)
 sites <- sample(1:16386, 200)
@@ -421,7 +421,7 @@ fig_4 <- data.frame(perc_race %>%
   mutate(conf.lo = estimate - 1.96*std.error, 
          conf.hi = estimate + 1.96*std.error))
 
-fig_4$variable <- recode(fig_4$variable, pnc_noscreen = "UFP (pt/cm3)", ma200_ir_bc1 = "BC (µg/m3)", no2 = "NO2 (ppb)", pm2.5_ug_m3 = "PM2.5 (µg/m3)", ) 
+fig_4$variable <- recode(fig_4$variable, pnc_noscreen = "UFP (pt/cm3)", ma200_ir_bc1 = "BC (ng/m3)", no2 = "NO2 (ppb)", pm2.5_ug_m3 = "PM2.5 (µg/m3)", ) 
 fig_4$race_eth_grp <- recode(fig_4$race_eth_grp, bk_p_ethn_non_hisp_white = "Non-Hispanic White", bk_p_race_asian = "Asian", bk_p_race_black = "Black", bk_p_ethn_hisp = "Hispanic") 
 
 
@@ -555,25 +555,48 @@ ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=pm2.5_ug_m3)) + geom
 
 # Supplement ##################################################################
 
+### Sensitivity Analysis: 2009-2013 Income Data
+
+```{r}
+
+new_acs <- read.csv("/projects/trap/transfer/kaya/MANUSCRIPT DATA/merged_ACS.csv")
+new_acs$new_income_group <- cut(new_acs$med_HH_inc_2019, c(0, 20000, 40000, 50000, 60000, 70000, 80000, 90000, 110000, 250001))
+levels(new_acs$new_income_group) <- c("<$20k", "$20k-40k", "$40k-50k", "$50k-60k", "$60k-70k", "$70k-80k", "$80k-90k", "$90k-110k", ">$110k")
+new_acs$blockgroup_key_2010 <- as.character(new_acs$blockgroup_key_2010)
+new_census_preds_wide <- census_preds_wide %>%
+  left_join(new_acs, by=c("blockgroup_key"="blockgroup_key_2010"))
+
+new_census_preds_wide %>%
+  group_by(new_income_group) %>%
+  summarise(pop = sum(bk_tot_pop_2010),
+            ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010),
+            ufp_pct_diff = per_diff(ufp, 5584),
+            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010),
+            bc_pct_diff = per_diff(bc, 446.7),
+            no2 = weighted.mean(no2, bk_tot_pop_2010),
+            no2_pct_diff = per_diff(no2, 7.52),
+            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010),
+            pm2.5_pct_diff = per_diff(pm2.5, 4.259))
+
+cor(new_census_preds_wide$bg_med_inc_hshld.x, new_census_preds_wide$med_HH_inc_2019)
+
+```
+
 ### Sensitivity Analysis: HOLC-Graded Area Definitions
 
 ```{r}
 
-## Assign A-D HOLC grades - Analysis 1
-holc_grades$duplicated <- duplicated(holc_grades$BLOCKID10)
-between_grades <- holc_grades[duplicated(holc_grades$BLOCKID10), ]$BLOCKID10
-holc_no_dup <- holc_grades[!(holc_grades$BLOCKID10 %in% between_grades), ]
+## Analysis 1: Only include blocks fully contained 
+redlining_blocks_contained <- redlining_blocks[redlining_blocks$count == 1, ]
 
-holc_no_dup$BLOCKID10 <- as.character(holc_no_dup$BLOCKID10)
-redlining_blocks <- census_preds_wide %>%
-  left_join(holc_no_dup, by=c("block_key"="BLOCKID10"))
-redlining_blocks$count <- as.numeric(ave(redlining_blocks$block_key, redlining_blocks$block_key, FUN = length))
+redlining_blocks_contained %>%
+  group_by(holc_grade) %>%
+  summarise(ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010),
+            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010),
+            no2 = weighted.mean(no2, bk_tot_pop_2010),
+            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010))
 
-## Assign X HOLC grade - Analysis 1
-redlining_blocks$holc_grade[is.na(redlining_blocks$holc_grade) & redlining_blocks$block_key %in% redlining_area$BLOCKID10] <- "X"
-redlining_blocks <- na.omit(redlining_blocks)
-
-## Assign A-D HOLC grades - Analysis 2
+## Analysis 2: Pollution means weighted by block population divided proportionally to area
 holc_areas <- read.csv("/projects/trap/transfer/kaya/area definition.csv")
 holc_areas <- holc_areas[c("BLOCKID10", "holc_grade", "area")]
 holc_area_per <- holc_areas %>%
@@ -584,34 +607,15 @@ holc_area_per$BLOCKID10 <- as.character(holc_area_per$BLOCKID10)
 redlining_blocks_area <- census_preds_wide %>%
   left_join(holc_area_per, by=c("block_key"="BLOCKID10"))
 
-## Assign X HOLC grade - Analysis 2
 redlining_blocks_area$holc_grade[is.na(redlining_blocks_area$holc_grade) & redlining_blocks_area$block_key %in% redlining_area$BLOCKID10] <- "X"
 redlining_blocks_area <- na.omit(redlining_blocks_area)
 
-## Analysis 1: Pollution means weighted by block population divided by number of grades block is assigned to
-redlining_blocks %>%
-  group_by(holc_grade) %>%
-  summarise(ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010/count),
-            ufp_pct_diff = per_diff(ufp, 7102),
-            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010/count),
-            bc_pct_diff = per_diff(bc, 539),
-            no2 = weighted.mean(no2, bk_tot_pop_2010/count),
-            no2_pct_diff = per_diff(no2, 9.3),
-            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010/count),
-            pm2.5_pct_diff = per_diff(pm2.5, 4.7))
-
-
-## Analysis 2: Pollution means weighted by block population divided by number of grades block is assigned to
 redlining_blocks_area %>%
   group_by(holc_grade) %>%
   summarise(ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010*percent),
-            ufp_pct_diff = per_diff(ufp, 7102),
             bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010*percent),
-            bc_pct_diff = per_diff(bc, 539),
             no2 = weighted.mean(no2, bk_tot_pop_2010*percent),
-            no2_pct_diff = per_diff(no2, 9.3),
-            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010*percent),
-            pm2.5_pct_diff = per_diff(pm2.5, 4.7))
+            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010*percent))
 
 ```
 
