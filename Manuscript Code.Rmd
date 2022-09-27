@@ -125,7 +125,6 @@ sum(subset(census_percent_wide, is.na(bg_med_inc_hshld) & households!= 0)$bk_tot
 
 ```
 
-
 ## Table 1. Summary Statistics
 
 ```{r}
@@ -158,6 +157,29 @@ summary(subset(redlining_blocks, holc_grade == "C"))
 summary(subset(redlining_blocks, holc_grade == "D"))
 summary(subset(redlining_blocks, holc_grade == "X"))
 
+## Study region area
+all_block_areas <- read.csv("/projects/trap/transfer/kaya/block areas.csv")
+all_block_areas$BLOCKID10 <- as.character(all_block_areas$BLOCKID10)
+census_block_areas <- census_preds_wide %>%
+  left_join(all_block_areas, by=c("block_key"="BLOCKID10"))
+sum(census_block_areas$area/1000000)
+
+## Redlining region area
+redlining_blocks_unique <- subset(redlining_blocks, !duplicated(redlining_blocks$block_key))
+redlining_block_areas <- redlining_blocks_unique %>%
+  left_join(all_block_areas, by=c("block_key"="BLOCKID10"))
+sum(redlining_block_areas$area/1000000)
+
+## Redlining grades area
+redlining_grades_areas <- redlining_blocks %>%
+  left_join(all_block_areas, by=c("block_key"="BLOCKID10"))
+redlining_grades_areas$adj_area <- redlining_grades_areas$area/redlining_grades_areas$count
+sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "A", ]$adj_area/1000000)
+sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "B", ]$adj_area/1000000)
+sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "C", ]$adj_area/1000000)
+sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "D", ]$adj_area/1000000)
+sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "X", ]$adj_area/1000000)
+
 ```
 
 #### Number of blocks split between redlining grades
@@ -178,6 +200,14 @@ nrow(n_occur[n_occur$Freq > 2,])
 
 ```
 
+## Pollutant correlations
+
+```{r}
+
+cor(census_preds_wide[, c('ma200_ir_bc1','no2', 'pnc_noscreen', 'pm2.5_ug_m3')], method='pearson')
+
+```
+
 ## Table 2. Exposure Disparities by Income
 
 ```{r, fig.show="hold", out.width="50%", echo=FALSE}
@@ -185,14 +215,14 @@ nrow(n_occur[n_occur$Freq > 2,])
 census_preds_wide %>%
   group_by(income_group) %>%
   summarise(pop = sum(bk_tot_pop_2010),
-            ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010),
-            ufp_pct_diff = per_diff(ufp, 5712),
-            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010),
-            bc_pct_diff = per_diff(bc, 453),
-            no2 = weighted.mean(no2, bk_tot_pop_2010),
-            no2_pct_diff = per_diff(no2, 7.63),
-            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010),
-            pm2.5_pct_diff = per_diff(pm2.5, 4.27))
+            ufp = signif(weighted.mean(pnc_noscreen, bk_tot_pop_2010), digits=3),
+            ufp_pct_diff = per_diff(ufp, 6680),
+            bc = signif(weighted.mean(ma200_ir_bc1, bk_tot_pop_2010), digits=3),
+            bc_pct_diff = per_diff(bc, 520),
+            no2 = round(weighted.mean(no2, bk_tot_pop_2010), digits=1),
+            no2_pct_diff = per_diff(no2, 8.7),
+            pm2.5 = round(weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010), digits=1),
+            pm2.5_pct_diff = per_diff(pm2.5, 4.6))
 
 ```
 
@@ -229,7 +259,8 @@ census_preds_long %>%
 ## Pollution means weighted by block population divided by number of grades block is assigned to
 redlining_blocks %>%
   group_by(holc_grade) %>%
-  summarise(ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010/count),
+  summarise(pop = sum(bk_tot_pop_2010/count),
+            ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010/count),
             ufp_pct_diff = per_diff(ufp, 7150),
             bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010/count),
             bc_pct_diff = per_diff(bc, 547),
@@ -569,16 +600,15 @@ new_census_preds_wide <- census_preds_wide %>%
 new_census_preds_wide %>%
   group_by(new_income_group) %>%
   summarise(pop = sum(bk_tot_pop_2010),
-            ufp = weighted.mean(pnc_noscreen, bk_tot_pop_2010),
-            ufp_pct_diff = per_diff(ufp, 5584),
-            bc = weighted.mean(ma200_ir_bc1, bk_tot_pop_2010),
-            bc_pct_diff = per_diff(bc, 446.7),
-            no2 = weighted.mean(no2, bk_tot_pop_2010),
-            no2_pct_diff = per_diff(no2, 7.52),
-            pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010),
-            pm2.5_pct_diff = per_diff(pm2.5, 4.259))
+            ufp = signif(weighted.mean(pnc_noscreen, bk_tot_pop_2010), digits=3),
+            ufp_pct_diff = per_diff(ufp, 6680),
+            bc = signif(weighted.mean(ma200_ir_bc1, bk_tot_pop_2010), digits=3),
+            bc_pct_diff = per_diff(bc, 520),
+            no2 = round(weighted.mean(no2, bk_tot_pop_2010), digits=1),
+            no2_pct_diff = per_diff(no2, 8.7),
+            pm2.5 = round(weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010), digits=1),
+            pm2.5_pct_diff = per_diff(pm2.5, 4.6))
 
-cor(new_census_preds_wide$bg_med_inc_hshld.x, new_census_preds_wide$med_HH_inc_2019)
 
 ```
 
@@ -622,8 +652,6 @@ redlining_blocks_area %>%
 ### Sensitivity Analysis: Results Restricted to the HOLC-Graded Area 
 
 ``` {r}
-
-redlining_blocks_unique <- subset(redlining_blocks, !duplicated(redlining_blocks$block_key))
 
 redlining_blocks_long <- redlining_blocks_unique %>%
   pivot_longer(cols = c(bk_p_race_asian, bk_p_race_black, bk_p_ethn_hisp, bk_p_ethn_non_hisp_white, bk_p_race_native, bk_p_race_pacific), names_to="race", values_to="percent")
