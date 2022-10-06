@@ -652,10 +652,6 @@ redlining_blocks_area %>%
 ### Sensitivity Analysis: Results Restricted to the HOLC-Graded Area 
 
 ``` {r}
-
-redlining_blocks_long <- redlining_blocks_unique %>%
-  pivot_longer(cols = c(bk_p_race_asian, bk_p_race_black, bk_p_ethn_hisp, bk_p_ethn_non_hisp_white, bk_p_race_native, bk_p_race_pacific), names_to="race", values_to="percent")
-
 redlining_blocks_unique %>%
   group_by(income_group) %>%
   summarise(pop = sum(bk_tot_pop_2010),
@@ -667,6 +663,9 @@ redlining_blocks_unique %>%
             no2_pct_diff = per_diff(no2, 9.76),
             pm2.5 = weighted.mean(pm2.5_ug_m3, bk_tot_pop_2010),
             pm2.5_pct_diff = per_diff(pm2.5, 4.92))
+
+redlining_blocks_long <- redlining_blocks_unique %>%
+  pivot_longer(cols = c(bk_p_race_asian, bk_p_race_black, bk_p_ethn_hisp, bk_p_ethn_non_hisp_white, bk_p_race_native, bk_p_race_pacific), names_to="race", values_to="percent")
 
 weighted.mean(redlining_blocks_unique$pnc_noscreen, redlining_blocks_unique$bk_tot_pop_2010)
 weighted.mean(redlining_blocks_unique$ma200_ir_bc1, redlining_blocks_unique$bk_tot_pop_2010)
