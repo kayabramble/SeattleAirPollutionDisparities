@@ -17,7 +17,7 @@ if (!is.null(sessionInfo()$otherPkgs)) {
    
 }
 
-pacman::p_load(dplyr, ggplot2, ggpubr, sf, tidyverse, modelr, nlme, gstat, sp, geepack, kableExtra)
+pacman::p_load(dplyr, ggplot2, ggpubr, sf, tidyverse, modelr, nlme, gstat, sp, geepack, kableExtra, data.table)
 
 ```
 
@@ -129,15 +129,10 @@ sum(subset(census_percent_wide, is.na(bg_med_inc_hshld) & households!= 0)$bk_tot
 
 ```{r}
 
-outside_redlining <- subset(census_preds_wide, !(census_preds_wide$block_key %in% redlining_blocks$block_key))
-
 ## n Blocks
 nrow(census_preds_wide)
 length(unique(redlining_blocks$block_key))
 nrow(census_preds_wide) - length(unique(redlining_blocks$block_key))
-redlining_blocks %>%
-  group_by(holc_grade) %>%
-  summarise(pop = sum(1/count))
 
 ## n People
 sum(census_preds_wide$bk_tot_pop_2010)
@@ -150,7 +145,6 @@ redlining_blocks %>%
 ## Pollutants and demographics
 summary(census_preds_wide)
 summary(data.frame(unique(redlining_blocks)))
-summary(outside_redlining)
 summary(subset(redlining_blocks, holc_grade == "A"))
 summary(subset(redlining_blocks, holc_grade == "B"))
 summary(subset(redlining_blocks, holc_grade == "C"))
@@ -164,21 +158,37 @@ census_block_areas <- census_preds_wide %>%
   left_join(all_block_areas, by=c("block_key"="BLOCKID10"))
 sum(census_block_areas$area/1000000)
 
-## Redlining region area
-redlining_blocks_unique <- subset(redlining_blocks, !duplicated(redlining_blocks$block_key))
-redlining_block_areas <- redlining_blocks_unique %>%
-  left_join(all_block_areas, by=c("block_key"="BLOCKID10"))
-sum(redlining_block_areas$area/1000000)
+## Redlining region area and n blocks
+kaya_areas <-  read.csv("/projects/trap/transfer/kaya/Code Review/redlining_areas_kb.csv")
+all_graded2 <- read_csv("/projects/trap/transfer/kaya/9_30_area_definitions.csv")
+all_graded2$bk_area <- all_graded2$area
+all_graded2$intersect_area <- all_graded2$area2
 
-## Redlining grades area
-redlining_grades_areas <- redlining_blocks %>%
-  left_join(all_block_areas, by=c("block_key"="BLOCKID10"))
-redlining_grades_areas$adj_area <- redlining_grades_areas$area/redlining_grades_areas$count
-sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "A", ]$adj_area/1000000)
-sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "B", ]$adj_area/1000000)
-sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "C", ]$adj_area/1000000)
-sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "D", ]$adj_area/1000000)
-sum(redlining_grades_areas[redlining_grades_areas$holc_grade == "X", ]$adj_area/1000000)
+setDT(kaya_areas)
+kaya_areas$BLOCKID10 <- as.character(kaya_areas$block_key)
+all_graded2$BLOCKID10 <- as.character(all_graded2$BLOCKID10)
+k1 <- kaya_areas[,list(tot_area = sum(area),
+                       n = length(area)), by = BLOCKID10]
+k2 <- kaya_areas[,list(grade_area = sum(area),
+                       grade_pct = sum(percent),
+                       n = length(area)), by = c("BLOCKID10", "holc_grade")]
+k2[,sum(grade_area/(1000*1000)),by = "holc_grade"]
+k3 <- k2[,list(tot_area = sum(grade_area),
+               tot_pct  = sum(grade_pct),
+               n = length(grade_area)), by = "BLOCKID10"]
+m_areas <- merge(k2[,c("BLOCKID10","holc_grade","grade_area","grade_pct")],
+                 all_graded2[,c("BLOCKID10","bk_area","holc_grade","intersect_area")],
+                 by = c("BLOCKID10", "holc_grade"), all = TRUE)
+m_areas2 <- merge(m_areas, k3, by = "BLOCKID10")
+m_areas2$best_area <- m_areas2$grade_pct * as.numeric(m_areas2$bk_area/(1000*1000))
+m_areas2[,list(tot_area = sum(best_area, na.rm = TRUE)), by = "holc_grade"]
+m_areas2[,list(tot_area = sum(best_area, na.rm = TRUE)), by = "holc_grade"]
+sum(m_areas2$best_area, na.rm = TRUE)
+
+m <- merge(k2, k3, by = "BLOCKID10")
+
+# Table of split blocks
+table(m[,c("holc_grade","n.y")])
 
 ```
 
@@ -332,8 +342,8 @@ resids = model_nosp_pnc$residuals[,1]
 df_resids_locs$resids_pnc = resids
 
 coordinates(df_resids_locs) = ~longitude+latitude
-vario = variogram(resids_pnc~longitude+latitude, df_resids_locs)
-plot(vario)
+#vario = variogram(resids_pnc~longitude+latitude, df_resids_locs)
+#plot(vario)
 
 rm(df_resids_locs)
 sites <- sample(1:16386, 200)
@@ -532,7 +542,9 @@ fig_4 <- fig_4 %>%
   mutate(low = -(max(abs(conf.hi*5))), high = max(conf.hi*5))
 
 ggplot(data=fig_4, aes(x=race_eth_grp, y=estimate*5, ymin=conf.lo*5, ymax=conf.hi*5)) +
-  geom_pointrange(aes(col=race_eth_grp)) + 
+  geom_pointrange(aes(col=race_eth_grp, shape=race_eth_grp)) +
+  scale_shape_manual(values = c(15, 16, 17, 18)) + 
+  scale_color_viridis_d() +
   geom_hline(aes(col=race_eth_grp), yintercept=0, linetype=2) +
   xlab("Pollutant") + ylab("Mean Difference (95% CI) per 5% Increase in Population") + 
   geom_errorbar(aes(ymin=conf.lo*5, ymax=conf.hi*5, col=race_eth_grp), width=0.5 ,cex=1) + 
@@ -545,7 +557,8 @@ ggplot(data=fig_4, aes(x=race_eth_grp, y=estimate*5, ymin=conf.lo*5, ymax=conf.h
       axis.text.x=element_text(face="bold"),
       axis.title=element_text(size=12,face="bold"),
       strip.text.y = element_text(hjust=0,vjust = 1,angle=180,face="bold")) +
-  labs(color="Race-Ethnicity") +
+  labs(color="Race-Ethnicity") + 
+  guides(shape = "none") +
   coord_flip()
 
 ```
@@ -652,6 +665,8 @@ redlining_blocks_area %>%
 ### Sensitivity Analysis: Results Restricted to the HOLC-Graded Area 
 
 ``` {r}
+
+redlining_blocks_unique <- subset(redlining_blocks, !duplicated(redlining_blocks$block_key))
 
 redlining_blocks_long <- redlining_blocks_unique %>%
   pivot_longer(cols = c(bk_p_race_asian, bk_p_race_black, bk_p_ethn_hisp, bk_p_ethn_non_hisp_white, bk_p_race_native, bk_p_race_pacific), names_to="race", values_to="percent")
