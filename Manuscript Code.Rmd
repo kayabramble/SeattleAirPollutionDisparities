@@ -565,33 +565,185 @@ ggplot(data=fig_4, aes(x=race_eth_grp, y=estimate*5, ymin=conf.lo*5, ymax=conf.h
 
 ```{r, fig.show="hold", out.width="50%"}
 
-ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=ma200_ir_bc1)) + geom_point() + geom_abline(slope=(-12.1)/log10(1.1), intercept=79.9/log10(1.1), color="red") + geom_smooth()
+p1 <- ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=ma200_ir_bc1)) + 
+  geom_point(alpha = 0.05, color = "#0072B2") + 
+  geom_abline(slope=(-12.1)/log10(1.1), intercept=79.9/log10(1.1), 
+              color="#661100") + geom_smooth(se = FALSE, color = "#332288") +
+  xlab("Log (base 10) blockgroup-level median household income") +
+  ylab("Black carbon (ng/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+        )
 
-ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=no2)) + geom_point() + geom_abline(slope=(-.224)/log10(1.1), intercept=1.442/log10(1.1), color="red") + geom_smooth()
+p2 <- ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=no2)) + geom_point(alpha = 0.05, color = "#0072B2") + 
+  geom_abline(slope=(-.224)/log10(1.1), intercept=1.442/log10(1.1), 
+              color="#661100") + 
+  geom_smooth(se = FALSE, color = "#332288")+
+  xlab("Log (base 10) blockgroup-level median household income") +
+  ylab("NO2 (ppb)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
 
-ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=pm2.5_ug_m3)) + geom_point() + geom_abline(slope=(-.0407)/log10(1.1), intercept=0.385/log10(1.1), color="red") + geom_smooth()
 
-ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=pnc_noscreen)) + geom_point() + geom_abline(slope=(-198.04)/log10(1.1), intercept=1232.50/log10(1.1), color="red") + geom_smooth()
+p3 <- ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=pm2.5_ug_m3)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_abline(slope=(-.0407)/log10(1.1), intercept=0.385/log10(1.1), color="#661100") + geom_smooth(se = FALSE, color = "#332288")+
+  xlab("Log (base 10) blockgroup-level median household income") +
+  ylab("PM2.5 (ug/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
 
-ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=pnc_noscreen)) + geom_point() + geom_smooth() + geom_abline(slope=11.494, intercept=6546.948, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_race_black, y=pnc_noscreen)) + geom_point() + geom_smooth() + geom_abline(slope=77.238, intercept=6229.281, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=pnc_noscreen)) + geom_point() + geom_smooth() + geom_abline(slope=34.451, intercept=6398.682, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=pnc_noscreen)) + geom_point() + geom_smooth() + geom_abline(slope=-30.901, intercept=8694.838, color="red")
 
-ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=ma200_ir_bc1)) + geom_point() + geom_smooth() + geom_abline(slope=-0.038, intercept=522.568, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_race_black, y=ma200_ir_bc1)) + geom_point() + geom_smooth() + geom_abline(slope=3.359, intercept=500.701, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=ma200_ir_bc1)) + geom_point() + geom_smooth() + geom_abline(slope=1.204, intercept=510.809, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=ma200_ir_bc1)) + geom_point() + geom_smooth() + geom_abline(slope=-1.053, intercept=589.312, color="red")
+p4 <- ggplot(census_preds_wide, aes(x=log10(bg_med_inc_hshld), y=pnc_noscreen)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_abline(slope=(-198.04)/log10(1.1), intercept=1232.50/log10(1.1), color="#661100") + geom_smooth(se = FALSE, color = "#332288")+
+  xlab("Log (base 10) blockgroup-level median household income") +
+  ylab("Ultrafine particles (pt/cm^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+grid.arrange(p1, p2, p3, p4, nrow = 2)
 
-ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=no2)) + geom_point() + geom_smooth() + geom_abline(slope=-0.002, intercept=8.803, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_race_black, y=no2)) + geom_point() + geom_smooth() + geom_abline(slope=0.048, intercept=8.466, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=no2)) + geom_point() + geom_smooth() + geom_abline(slope=0.007, intercept=8.705, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=no2)) + geom_point() + geom_smooth() + geom_abline(slope=-0.012, intercept=9.509, color="red")
 
-ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=pm2.5_ug_m3)) + geom_point() + geom_smooth() + geom_smooth() + geom_abline(slope=-0.004, intercept=4.616, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_race_black, y=pm2.5_ug_m3)) + geom_point() + geom_smooth() + geom_smooth() + geom_abline(slope=0.010, intercept=4.496, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=pm2.5_ug_m3)) + geom_point() + geom_smooth() + geom_smooth() + geom_abline(slope=0.001, intercept=4.551, color="red")
-ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=pm2.5_ug_m3)) + geom_point() + geom_smooth() + geom_smooth() + geom_abline(slope=-0.001, intercept=4.642, color="red")
+
+pa0 <- ggplot(census_preds_wide, 
+              aes(x=bk_p_race_asian, y=pnc_noscreen)) + 
+  geom_point(alpha = 0.05, color = "#0072B2") + 
+  geom_smooth(se = FALSE, color = "#332288") + 
+  geom_abline(slope=11.494, intercept=6546.948, color="#661100")+
+  xlab("Block-level percent Asian") +
+  ylab("Ultrafine particles (pt/cm^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pb0 <- ggplot(census_preds_wide, aes(x=bk_p_race_black, y=pnc_noscreen)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=77.238, intercept=6229.281, color="#661100")+
+  xlab("Block-level percent Black") +
+  ylab("Ultrafine particles (pt/cm^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+ph0 <- ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=pnc_noscreen)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=34.451, intercept=6398.682, color="#661100")+
+  xlab("Block-level percent Hispanic") +
+  ylab("Ultrafine particles (pt/cm^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+pn0 <- ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=pnc_noscreen)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=-30.901, intercept=8694.838, color="#661100")+
+  xlab("Block-level percent Non-Hispanic white") +
+  ylab("Ultrafine particles (pt/cm^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pa1 <- ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=ma200_ir_bc1)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=-0.038, intercept=522.568, color="#661100")+
+  xlab("Block-level percent Asian") +
+  ylab("Black carbon (ng/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pb1 <- ggplot(census_preds_wide, aes(x=bk_p_race_black, y=ma200_ir_bc1)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=3.359, intercept=500.701, color="#661100")+
+  xlab("Block-level percent Black") +
+  ylab("Black carbon (ng/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+ph1 <- ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=ma200_ir_bc1)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=1.204, intercept=510.809, color="#661100")+
+  xlab("Block-level percent Hispanic") +
+  ylab("Black carbon (ng/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pn1 <- ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=ma200_ir_bc1)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=-1.053, intercept=589.312, color="#661100")+
+  xlab("Block-level percent Non-Hispanic white") +
+  ylab("Black carbon (ng/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+
+pa2 <- ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=no2)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=-0.002, intercept=8.803, color="#661100")+
+  xlab("Block-level percent Asian") +
+  ylab("NO2 (ppb)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pb2 <- ggplot(census_preds_wide, aes(x=bk_p_race_black, y=no2)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=0.048, intercept=8.466, color="#661100")+
+  xlab("Block-level percent Black") +
+  ylab("NO2 (ppb)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+ph2 <- ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=no2)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=0.007, intercept=8.705, color="#661100")+
+  xlab("Block-level percent Hispanic") +
+  ylab("NO2 (ppb)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pn2 <- ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=no2)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=-0.012, intercept=9.509, color="#661100")+
+  xlab("Block-level percent Non-Hispanic white") +
+  ylab("NO2 (ppb)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pa3 <- ggplot(census_preds_wide, aes(x=bk_p_race_asian, y=pm2.5_ug_m3)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=-0.004, intercept=4.616, color="#661100")+
+  xlab("Block-level percent Asian") +
+  ylab("PM2.5 (ug/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pb3 <- ggplot(census_preds_wide, aes(x=bk_p_race_black, y=pm2.5_ug_m3)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=0.010, intercept=4.496, color="#661100")+
+  xlab("Block-level percent Black") +
+  ylab("PM2.5 (ug/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+ph3 <- ggplot(census_preds_wide, aes(x=bk_p_ethn_hisp, y=pm2.5_ug_m3)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=0.001, intercept=4.551, color="#661100")+
+  xlab("Block-level percent Hispanic") +
+  ylab("PM2.5 (ug/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+pn3 <- ggplot(census_preds_wide, aes(x=bk_p_ethn_non_hisp_white, y=pm2.5_ug_m3)) + geom_point(alpha = 0.05, color = "#0072B2") + geom_smooth(se = FALSE, color = "#332288") + geom_smooth(se = FALSE, color = "#332288") + geom_abline(slope=-0.001, intercept=4.642, color="#661100")+
+  xlab("Block-level percent Non-Hispanic white") +
+  ylab("PM2.5 (ug/m^3)") + 
+  theme(axis.title.x = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.text = element_text(size = 14)
+  )
+
+
+grid.arrange(pa0, pa1, pa2, pa3, nrow = 2)
+grid.arrange(pb0, pb1, pb2, pb3, nrow = 2)
+grid.arrange(ph0, ph1, ph2, ph3, nrow = 2)
+grid.arrange(pn0, pn1, pn2, pn3, nrow = 2)
 
 
 ```
